@@ -3,7 +3,9 @@ import pdf2image
 import imutils
 import numpy as np
 import random
+import os
 
+num = 0
 
 def debug_image(img, name="Debug"):
     cv2.imshow(name, img)
@@ -73,12 +75,12 @@ def get_hierarchy_levels(path):
     return levels
 
 
-def load_image(path):
-    pages = pdf2image.convert_from_path(path)
+def load_image(pdf_path, output_path=""):
+    pages = pdf2image.convert_from_path(pdf_path)
 
     i = 0
     for page in pages:
-        page.save("image3{}.jpg".format(i), "JPEG")
+        page.save(output_path + "image{}{}.jpg".format(num, i), "JPEG")
         i += 1
 
 
@@ -132,15 +134,44 @@ def get_bounding_boxes(image, orig_image):
 if __name__ == "__main__":
     random.seed()
     # load_image("Sample_Invoice_4.pdf")
-    lev = get_hierarchy_levels("image10.jpg")
-    im = cv2.imread("image10.jpg")
+    # lev = get_hierarchy_levels("image10.jpg")
+    # im = cv2.imread("image10.jpg")
+    #
+    # for val in lev.values():
+    #     col = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+    #     for rec in val:
+    #         cv2.rectangle(im, (rec[0], rec[1]), (rec[2], rec[3]), color=col, thickness=2)
+    #
+    # debug_image(imutils.resize(im, width=1000))
 
-    for val in lev.values():
-        col = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
-        for rec in val:
-            cv2.rectangle(im, (rec[0], rec[1]), (rec[2], rec[3]), color=col, thickness=2)
+    path = "GRiD_Sample Invoices II/"
+    out_path = "Image_Out/"
 
-    debug_image(imutils.resize(im, width=1000))
+    os.mkdir(out_path, mode=0o777, dir_fd=None)
+
+    for file in os.listdir(path):
+        if file.endswith(".pdf"):
+            print("Loading " + file)
+            load_image(path + file, out_path)
+
+        num += 1
+
+    for file in os.listdir(out_path):
+        if file.endswith(".jpg"):
+            print("Processing " + file)
+
+            lev = get_hierarchy_levels(out_path + file)
+            im = cv2.imread(out_path + file)
+
+            for val in lev.values():
+                col = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+                for rec in val:
+                    cv2.rectangle(im, (rec[0], rec[1]), (rec[2], rec[3]), color=col, thickness=2)
+
+            debug_image(imutils.resize(im, width=1000))
+
+
+
 
 
 
