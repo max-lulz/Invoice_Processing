@@ -5,17 +5,16 @@ import numpy as np
 import random
 import os
 
-num = 0
 
 def debug_image(img, name="Debug"):
     cv2.imshow(name, img)
     cv2.waitKey(0)
 
 
-def get_hierarchy_levels(path):
+def get_hierarchy_levels(image_path):
 
-    original_image = cv2.imread(path)
-    filtered_image = preprocess(path)
+    original_image = cv2.imread(image_path)
+    filtered_image = preprocess(image_path)
 
     contour_hierarchy, bounding_boxes = get_bounding_boxes(filtered_image, original_image)
 
@@ -80,12 +79,12 @@ def load_image(pdf_path, output_path=""):
 
     i = 0
     for page in pages:
-        page.save(output_path + "image{}{}.jpg".format(num, i), "JPEG")
+        page.save(output_path + "{}{}.jpg".format(pdf_path.split("/")[-1], i), "JPEG")
         i += 1
 
 
-def preprocess(path):
-    image = cv2.imread(path)
+def preprocess(image_path):
+    image = cv2.imread(image_path)
     image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
     hor_kernel = np.zeros((31, 31), dtype=np.uint8)                             # square kernel with middle row set to 1
@@ -153,8 +152,6 @@ if __name__ == "__main__":
         if file.endswith(".pdf"):
             print("Loading " + file)
             load_image(path + file, out_path)
-
-        num += 1
 
     for file in os.listdir(out_path):
         if file.endswith(".jpg"):
