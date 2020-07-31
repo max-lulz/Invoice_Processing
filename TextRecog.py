@@ -1,19 +1,33 @@
 import os
-
-import imutils
-import pytesseract
-import Hierarchy
-import cv2
 import random
 import time
-import tesserocr
+import cv2
+import imutils
+import pytesseract
 from PIL import Image
-import numpy as np
+import Hierarchy
+import tesserocr
+
+
+def func_time(func):
+    def timer(*args, **kwargs):
+        init_time = time.time()
+        func(*args, **kwargs)
+        print("Time taken for " + func.__name__ + ": {}".format(time.time() - init_time))
+
+    return timer
+
+
+def filter_boxes(box, api):
+    api.SetRectangle(box[0], box[1], box[2], box[3])
+    text = api.GetUTF8Text()
+
+    return (api.MeanTextConf() >= 30 and text and not text.isspace()), text
 
 
 def is_level(box1, box2):
     return True if ((box2[1] - 2 <= centre(box1)[1] <= box2[3] + box2[1] + 2) or (
-                box1[1] - 2 <= centre(box2)[1] <= box1[3] + box1[1] + 2)) else False
+            box1[1] - 2 <= centre(box2)[1] <= box1[3] + box1[1] + 2)) else False
 
 
 def centre(box):
@@ -46,8 +60,10 @@ def get_tesseract_bbox(image_path):
     return tess_bbox
 
 
+@func_time
 def test_bbox(image_path):
     image = cv2.imread(image_path)
+    pil_image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
     pre_image = Hierarchy.preprocess(image_path)
     _, boxes = Hierarchy.get_bounding_boxes(pre_image, False)
 
@@ -127,9 +143,25 @@ def test_bbox(image_path):
 
     del image_lines
 
+    with tesserocr.PyTessBaseAPI() as api:  # can be added to merge loop above
+        api.SetPageSegMode(tesserocr.PSM.AUTO_OSD)
+
+        api.SetImage(pil_image)
+
+        for key, line in image_merged_boxes.items():
+            filtered_line = []
+            for box in line:
+                is_text, text = filter_boxes(box, api)
+
+                if is_text:
+                    filtered_line.append([box, text.strip()])
+
+            image_merged_boxes[key] = filtered_line
+
     for val in image_merged_boxes.values():
         col = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
         for box in val:
+            box = box[0]
             cv2.rectangle(image, (box[0], box[1]), (box[2] + box[0], box[1] + box[3]), col, 2)
 
     Hierarchy.debug_image(image)
@@ -188,53 +220,11 @@ def get_merged_hierarchical_bbox(image_path):
     Hierarchy.debug_image(imutils.resize(image, width=800))
     cv2.destroyAllWindows()
 
-if __name__ == "__main__":
-    # im_path = "Image_Out/image00.jpg"
-    # image = cv2.imread(im_path, cv2.IMREAD_UNCHANGED)
-    # # image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    #
-    # image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    # pil_image = Image.fromarray(image)
-    #
-    # with tesserocr.PyTessBaseAPI() as api:
-    #     api.SetPageSegMode(tesserocr.PSM.AUTO_OSD)
-    #
-    # api.SetImage(pil_image)
-    #
-    # boxes = api.GetComponentImages(tesserocr.RIL.WORD, True)
-    #
-    # for _, box, _, _ in boxes:
-    #     x, y, w, h = box['x'], box['y'], box['w'], box['h']
-    #     cv2.rectangle(image, (x, y), (x + w, y + h), (0, 0, 255), 2)
-    #
-    # for val in new_lev:
-    #     row = []
-    #     for rec in val:
-    #         if rec[3] < image.shape[0]:
-    #             api.SetImage(Image.fromarray(image[rec[1]-5:rec[3]+5, rec[0]-5:rec[2]+5]))
-    #
-    #             boxes = api.GetComponentImages(tesserocr.RIL.WORD, True)
-    #
-    #             text = api.GetUTF8Text().strip()
-    #             row.append(text)
-    #
-    #             # Hierarchy.debug_image(image[rec[1]-5:rec[3]+5, rec[0]-5:rec[2]+5])
-    #     print(*row)
-    #     print("\n")
-    #
-    # Hierarchy.debug_image(imutils.resize(image, width=800))
 
+if __name__ == "__main__":
     image_dir = "Image_Out/"
 
-    curr_avg = 0
-    curr_num = 0
     for file in os.listdir(image_dir):
         if file.endswith(".jpg"):
             print(file)
-            init_time = time.time()
             test_bbox(image_dir + file)
-            fin_time = time.time()
-            print("Time taken : {}".format(fin_time - init_time))
-            curr_avg = (curr_avg * curr_num + (fin_time - init_time))/(curr_num + 1)
-            curr_num += 1
-            print("Current avg. time : {}".format(curr_avg))

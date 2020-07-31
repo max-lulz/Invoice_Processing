@@ -12,7 +12,6 @@ def debug_image(img, name="Debug"):
 
 
 def get_hierarchy_levels(image_path):
-
     original_image = cv2.imread(image_path)
     filtered_image = preprocess(image_path)
 
@@ -24,7 +23,8 @@ def get_hierarchy_levels(image_path):
 
     def is_level(box1, box2):
 
-        return 0 if box2[1] - 5 <= centre(box1)[1] <= box2[3] + 5 or box1[1] - 5 <= centre(box2)[1] <= box1[3] + 5 else 1
+        return 0 if box2[1] - 5 <= centre(box1)[1] <= box2[3] + 5 or box1[1] - 5 <= centre(box2)[1] <= box1[
+            3] + 5 else 1
 
     def centre(box):
         x = (box[0] + box[2]) // 2
@@ -44,8 +44,8 @@ def get_hierarchy_levels(image_path):
         else:
             levels[curr_level] = [bounding_boxes[node]]
 
-        if prev_node == -1 and next_node == -1:                    # No adjacent node -> no contour at same level
-            if child_node == -1:                                   # No child or adjacent nodes -> end of hierarchy
+        if prev_node == -1 and next_node == -1:  # No adjacent node -> no contour at same level
+            if child_node == -1:  # No child or adjacent nodes -> end of hierarchy
                 return
 
             elif child_node not in vis:
@@ -87,21 +87,21 @@ def preprocess(image_path):
     image = cv2.imread(image_path)
     image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-    hor_kernel = np.zeros((31, 31), dtype=np.uint8)                             # square kernel with middle row set to 1
-    hor_kernel[15, :] = 1                                                       # can be changed to a single row kernel
+    hor_kernel = np.zeros((31, 31), dtype=np.uint8)  # square kernel with middle row set to 1
+    hor_kernel[15, :] = 1  # can be changed to a single row kernel
 
     ver_kernel = np.zeros((31, 31), dtype=np.uint8)
     ver_kernel[:, 15] = 1
 
-    hor_mask = cv2.morphologyEx(~image, cv2.MORPH_OPEN, hor_kernel, iterations=1)       # make masks that contain
-    ver_mask = cv2.morphologyEx(~image, cv2.MORPH_OPEN, ver_kernel, iterations=1)       # horizontal and vertical lines
+    hor_mask = cv2.morphologyEx(~image, cv2.MORPH_OPEN, hor_kernel, iterations=1)  # make masks that contain
+    ver_mask = cv2.morphologyEx(~image, cv2.MORPH_OPEN, ver_kernel, iterations=1)  # horizontal and vertical lines
 
     _, hor_mask = cv2.threshold(hor_mask, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
     _, ver_mask = cv2.threshold(ver_mask, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
     _, image = cv2.threshold(image, 150, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
 
-    image += hor_mask                                                           # removes horizontal and vertical lines
-    image += ver_mask                                                           # improves text blob detection
+    image += hor_mask  # removes horizontal and vertical lines
+    image += ver_mask  # improves text blob detection
 
     close_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, ksize=(5, 5))
     image = cv2.morphologyEx(~image, cv2.MORPH_CLOSE, close_kernel, iterations=2)
@@ -124,24 +124,11 @@ def get_bounding_boxes(image, vertices=True):
 
         bounding_boxes.append([x, y, x2, y2])
 
-        # if w > 10 and 100 > h > 10:
-        #     cv2.rectangle(orig_image, (x, y), (x2, y2), color=(200, 200, 0), thickness=2)
-
     return hierarchy[0], bounding_boxes
 
 
 if __name__ == "__main__":
     random.seed()
-    # load_image("Sample_Invoice_4.pdf")
-    # lev = get_hierarchy_levels("image10.jpg")
-    # im = cv2.imread("image10.jpg")
-    #
-    # for val in lev.values():
-    #     col = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
-    #     for rec in val:
-    #         cv2.rectangle(im, (rec[0], rec[1]), (rec[2], rec[3]), color=col, thickness=2)
-    #
-    # debug_image(imutils.resize(im, width=1000))
 
     path = "GRiD_Sample Invoices II/"
     out_path = "Image_Out/"
@@ -166,9 +153,3 @@ if __name__ == "__main__":
                     cv2.rectangle(im, (rec[0], rec[1]), (rec[2], rec[3]), color=col, thickness=2)
 
             debug_image(imutils.resize(im, width=1000))
-
-
-
-
-
-
