@@ -16,7 +16,7 @@ def get_hierarchy_levels(image_path):
     original_image = cv2.imread(image_path)
     filtered_image = preprocess(image_path)
 
-    contour_hierarchy, bounding_boxes = get_bounding_boxes(filtered_image, original_image)
+    contour_hierarchy, bounding_boxes = get_bounding_boxes(filtered_image)
 
     hier_image = original_image.copy()
     vis = {}
@@ -112,15 +112,15 @@ def preprocess(image_path):
     return image
 
 
-def get_bounding_boxes(image, orig_image):
+def get_bounding_boxes(image, vertices=True):
     contours, hierarchy = cv2.findContours(image, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
     bounding_boxes = []
 
     for contour in contours:
         x, y, w, h = cv2.boundingRect(contour)
 
-        x2 = x + w
-        y2 = y + h
+        x2 = x + w if vertices else w
+        y2 = y + h if vertices else h
 
         bounding_boxes.append([x, y, x2, y2])
 
