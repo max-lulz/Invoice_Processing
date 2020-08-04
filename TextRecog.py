@@ -9,10 +9,8 @@ import Hierarchy
 import tesserocr
 import numpy as np
 
-
-def merge_bboxes(boxes):
-    merged_boxes = []
-    level_dict = {}
+def get_line(boxes):
+    line_dict = {}
 
     is_done = [-1] * len(boxes)
     last_num = 0
@@ -23,7 +21,7 @@ def merge_bboxes(boxes):
             last_num += 1
             curr_num = last_num
             is_done[i] = curr_num
-            level_dict[curr_num] = [boxes[i]]
+            line_dict[curr_num] = [boxes[i]]
 
         else:
             curr_num = is_done[i]
@@ -32,33 +30,46 @@ def merge_bboxes(boxes):
             if is_done[j] == -1:
                 if is_level(boxes[i], boxes[j]):
                     is_done[j] = is_done[i]
-                    level_dict[curr_num].append(boxes[j])
+                    line_dict[curr_num].append(boxes[j])
 
                 else:
                     break
 
-    for val in level_dict.values():
-        new_val = []
-        val.sort()
+    return line_dict
 
-        merged_bbox = val[0]
-        for i in range(1, len(val)):
-            if val[i][0] < merged_bbox[0] + merged_bbox[2]:
-                # merged_bbox[0] = min(merged_bbox[0], val[i - 1][0], val[i][0])
-                merged_bbox[1] = min(merged_bbox[1], val[i - 1][1], val[i][1])
-                merged_bbox[2] = max(merged_bbox[2], val[i - 1][0] + val[i - 1][2] - merged_bbox[0],
-                                     val[i][0] + val[i][2] - merged_bbox[0])
-                merged_bbox[3] = max(merged_bbox[3], val[i - 1][1] + val[i - 1][3] - merged_bbox[1],
-                                     val[i][1] + val[i][3] - merged_bbox[1])
 
-            else:
-                new_val.append(merged_bbox)
-                merged_bbox = val[i]
+def merge_bboxes(boxes):
+    merged_boxes = []
 
-        if new_val[-1:] != merged_bbox:
-            new_val.append(merged_bbox)
+    image_lines = get_line(boxes)
 
-        merged_boxes.append(new_val)
+    for line in image_lines.values():
+        new_line = []
+        line.sort()
+
+        is_merged = [False] * len(line)
+
+        for i in range(len(line)):
+            merged_bbox = line[i]
+
+            if not is_merged[i]:
+                is_merged[i] = True
+
+                for j in range(i+1, len(line)):
+                    if line[j][0] < merged_bbox[0] + merged_bbox[2] and is_level(merged_bbox, line[j]) and not is_merged[j]:
+                        merged_bbox[0] = min(merged_bbox[0], line[j][0])
+                        merged_bbox[1] = min(merged_bbox[1], line[j][1])
+                        merged_bbox[2] = max(merged_bbox[2], line[j][0] + line[j][2] - merged_bbox[0])
+                        merged_bbox[3] = max(merged_bbox[3], line[j][1] + line[j][3] - merged_bbox[1])
+
+                        is_merged[j] = True
+
+                    elif not line[i][0] < merged_bbox[0] + merged_bbox[2]:
+                        break
+
+                new_line.append(merged_bbox)
+
+        merged_boxes.append(new_line)
 
     merged_boxes.sort(key=lambda x: x[0][1])
 
@@ -89,7 +100,6 @@ def tess_process(image):
     boxes = get_tesseract_bbox(image)
 
     new_boxes = []
-
     with tesserocr.PyTessBaseAPI() as api:
         api.SetPageSegMode(tesserocr.PSM.SINGLE_BLOCK)
 
@@ -105,7 +115,6 @@ def tess_process(image):
                 # found += 1
                 new_boxes.append(box)
                 # cv2.rectangle(orig_image, (box[0], box[1]), (box[2] + box[0], box[1] + box[3]), (0, 255, 0), 1)
-
     # print("Image{}, Found: {}, Total: {}".format(count, found, total))
     # cv2.imwrite("Output/Image{}.jpg".format(count), orig_image)
 
@@ -263,10 +272,11 @@ def test_bbox(image_path):
                 if is_text:
                     found += 1
                     filtered_line.append([box, text.strip()])
+                    print(text.strip())
 
-            image_merged_boxes[key] = filtered_line
+            image_merged_boxes[i] = filtered_line
 
-    for val in image_merged_boxes.values():
+    for val in image_merged_boxes:
         col = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
         for box in val:
             box = box[0]
@@ -334,6 +344,7 @@ if __name__ == "__main__":
 
     for file in os.listdir(image_dir):
         if file.endswith(".jpg"):
+            # if count == 20:
             test_bbox(image_dir + file)
             # tess_process(cv2.imread(image_dir + file))
             count += 1
