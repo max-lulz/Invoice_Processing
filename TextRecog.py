@@ -1,13 +1,10 @@
 import os
-import random
 import time
 import cv2
-import imutils
-import pytesseract
 from PIL import Image
 import Hierarchy
 import tesserocr
-import numpy as np
+
 
 def get_line(boxes):
     line_dict = {}
@@ -38,36 +35,44 @@ def get_line(boxes):
     return line_dict
 
 
-def merge_bboxes(boxes):
+def merge_box(box1, box2):
+    min_x = min(box1[0], box2[0])
+    min_y = min(box1[1], box2[1])
+    max_w = max(box1[0] + box1[2], box2[0] + box2[2]) - min_x
+    max_h = max(box1[1] + box1[3], box2[1] + box2[3]) - min_y
+
+    merged_box = [min_x, min_y, max_w, max_h]
+
+    return merged_box
+
+
+def get_merged_boundingboxes(boxes):
     merged_boxes = []
 
     image_lines = get_line(boxes)
 
     for line in image_lines.values():
-        new_line = []
+
         line.sort()
+        new_line = []
 
         is_merged = [False] * len(line)
 
         for i in range(len(line)):
-            merged_bbox = line[i]
+            merged_boundingbox = line[i]
 
             if not is_merged[i]:
                 is_merged[i] = True
 
                 for j in range(i+1, len(line)):
-                    if line[j][0] < merged_bbox[0] + merged_bbox[2] and is_level(merged_bbox, line[j]) and not is_merged[j]:
-                        merged_bbox[0] = min(merged_bbox[0], line[j][0])
-                        merged_bbox[1] = min(merged_bbox[1], line[j][1])
-                        merged_bbox[2] = max(merged_bbox[2], line[j][0] + line[j][2] - merged_bbox[0])
-                        merged_bbox[3] = max(merged_bbox[3], line[j][1] + line[j][3] - merged_bbox[1])
-
+                    if line[j][0] < merged_boundingbox[0] + merged_boundingbox[2] and is_level(merged_boundingbox, line[j]) and not is_merged[j]:
                         is_merged[j] = True
+                        merged_boundingbox = merge_box(merged_boundingbox, line[j])
 
-                    elif not line[i][0] < merged_bbox[0] + merged_bbox[2]:
+                    elif not line[j][0] < merged_boundingbox[0] + merged_boundingbox[2]:
                         break
 
-                new_line.append(merged_bbox)
+                new_line.append(merged_boundingbox)
 
         merged_boxes.append(new_line)
 
@@ -76,50 +81,26 @@ def merge_bboxes(boxes):
     return merged_boxes
 
 
-def tess_process(image):
-    orig_image = image.copy()
-    pil_image = cv2.cvtColor(orig_image, cv2.COLOR_BGR2GRAY)
-    image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+def get_text_boundingboxes(image):
 
-    hor_kernel = np.zeros((1, 80), dtype=np.uint8)  # square kernel with middle row set to 1
-    hor_kernel[:, :] = 1  # can be changed to a single row kernel
+    pil_image = cv2.cvtColor(image.copy(), cv2.COLOR_BGR2GRAY)
+    image = Hierarchy.mask_lines(image.copy(), 80)
 
-    ver_kernel = np.zeros((80, 1), dtype=np.uint8)
-    ver_kernel[:, :] = 1
+    sparse_word_boxes = detect_sparse_words(image)
+    text_boxes = []
 
-    hor_mask = cv2.morphologyEx(~image, cv2.MORPH_OPEN, hor_kernel, iterations=1)  # make masks that contain
-    ver_mask = cv2.morphologyEx(~image, cv2.MORPH_OPEN, ver_kernel, iterations=1)  # horizontal and vertical lines
-
-    _, hor_mask = cv2.threshold(hor_mask, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
-    _, ver_mask = cv2.threshold(ver_mask, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
-    _, image = cv2.threshold(image, 150, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
-
-    image += hor_mask  # removes horizontal and vertical lines
-    image += ver_mask  # improves text blob detection
-
-    boxes = get_tesseract_bbox(image)
-
-    new_boxes = []
     with tesserocr.PyTessBaseAPI() as api:
         api.SetPageSegMode(tesserocr.PSM.SINGLE_BLOCK)
 
         api.SetImage(Image.fromarray(pil_image))
 
-        total = len(boxes)
-        found = 0
-
-        for box in boxes:
+        for box in sparse_word_boxes:
             is_text, text = filter_boxes([box[0] - 5, box[1] - 5, box[2] + 5, box[3] + 5], api)
 
             if is_text:
-                # found += 1
-                new_boxes.append(box)
-                # cv2.rectangle(orig_image, (box[0], box[1]), (box[2] + box[0], box[1] + box[3]), (0, 255, 0), 1)
-    # print("Image{}, Found: {}, Total: {}".format(count, found, total))
-    # cv2.imwrite("Output/Image{}.jpg".format(count), orig_image)
+                text_boxes.append(box)
 
-    # return image
-    return new_boxes
+    return text_boxes
 
 
 def func_time(func):
@@ -150,16 +131,11 @@ def centre(box):
     return x, y
 
 
-def detect_text(image_region):
-    pytesseract.image_to_data(image_region, output_type="dict")
+def detect_sparse_words(image):
 
+    pil_image = Image.fromarray(cv2.cvtColor(image.copy(), cv2.COLOR_BGR2RGB))
 
-def get_tesseract_bbox(image):
-    im = image.copy()
-    image = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
-    pil_image = Image.fromarray(image)
-
-    tess_bbox = []
+    sparse_boundingboxes = []
 
     with tesserocr.PyTessBaseAPI() as api:
         api.SetPageSegMode(tesserocr.PSM.SPARSE_TEXT)
@@ -168,174 +144,50 @@ def get_tesseract_bbox(image):
         box_data = api.GetComponentImages(tesserocr.RIL.WORD, True)
 
         for (_, box, _, _) in box_data:
-            tess_bbox.append([box['x'], box['y'], box['w'], box['h']])
+            sparse_boundingboxes.append([box['x'], box['y'], box['w'], box['h']])
 
-    return tess_bbox
+    return sparse_boundingboxes
 
 
 @func_time
-def test_bbox(image_path):
+def get_image_text(image_path):
+
     image = cv2.imread(image_path)
     pil_image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
-    pre_image = Hierarchy.preprocess(image_path)
-    _, boxes = Hierarchy.get_bounding_boxes(pre_image, False)
 
-    boxes += tess_process(image)
+    _, boxes = Hierarchy.get_contour_bounding_boxes(image, get_vertices=False)
+
+    boxes.extend(get_text_boundingboxes(image))
 
     boxes = list(filter(lambda x: x[3] + x[1] < image.shape[0] and x[2] + x[0] < image.shape[1] and x[3] <= 100, boxes))
-
-    # for i,_ in enumerate(boxes):
-    #     boxes[i][0] -= 5
-    #     boxes[i][2] += 5
-
     boxes.sort(key=lambda x: x[1])
 
-    image_lines = {}
-    line_num = 0
-    word_line = boxes[0:1]
+    merged_text_boxes = get_merged_boundingboxes(boxes)
 
-    for i in range(1, len(boxes)):
-        if is_level(boxes[i], boxes[i - 1]):
-            word_line.append(boxes[i])
-        else:
-            image_lines[line_num] = word_line
-            line_num += 1
-            word_line = [boxes[i]]
-
-    # del boxes
-
-    image_lines[line_num] = word_line
-
-    for key in image_lines.keys():
-        image_lines[key].sort()
-
-    # for key, val in image_lines.items():
-        # val = val2
-        # for _ in range(100):
-        #     new_val = []
-        #     merged_bbox = val[0]
-        #     for i in range(1, len(val)):
-        #         if val[i][0] <= val[i - 1][0] + val[i - 1][2] and is_level(val[i], merged_bbox):
-        #             merged_bbox[0] = min(merged_bbox[0], val[i - 1][0], val[i][0])
-        #             # merged_bbox[1] = min(merged_bbox[1], val[i - 1][1], val[i][1])
-        #             merged_bbox[2] = max(merged_bbox[2], val[i - 1][0] + val[i - 1][2] - merged_bbox[0],
-        #                                  val[i][0] + val[i][2] - merged_bbox[0])
-        #             # merged_bbox[3] = max(merged_bbox[3], val[i - 1][1] + val[i - 1][3] - merged_bbox[1],
-        #             #                      val[i][1] + val[i][3] - merged_bbox[1])
-        #
-        #         else:
-        #             new_val.append(merged_bbox)
-        #             merged_bbox = val[i]
-        #
-        #     if new_val[-1:] != merged_bbox:
-        #         new_val.append(merged_bbox)
-        #
-        #     val = new_val
-        # new_val = []
-        # merged_bbox = val[0]
-        # for i in range(1, len(val)):
-        #     if val[i][0] < merged_bbox[0] + merged_bbox[2]:
-        #         merged_bbox[0] = min(merged_bbox[0], val[i - 1][0], val[i][0])
-        #         # merged_bbox[1] = min(merged_bbox[1], val[i - 1][1], val[i][1])
-        #         merged_bbox[2] = max(merged_bbox[2], val[i - 1][0] + val[i - 1][2] - merged_bbox[0],
-        #                              val[i][0] + val[i][2] - merged_bbox[0])
-        #         # merged_bbox[3] = max(merged_bbox[3], val[i - 1][1] + val[i - 1][3] - merged_bbox[1],
-        #         #                      val[i][1] + val[i][3] - merged_bbox[1])
-        #
-        #     else:
-        #         new_val.append(merged_bbox)
-        #         merged_bbox = val[i]
-        #
-        # if new_val[-1:] != merged_bbox:
-        #     new_val.append(merged_bbox)
-
-        # image_merged_boxes[key] = val
-
-    image_merged_boxes = merge_bboxes(boxes)
-
-    del image_lines
-
-    with tesserocr.PyTessBaseAPI() as api:  # can be added to merge loop above
+    with tesserocr.PyTessBaseAPI() as api:
         api.SetPageSegMode(tesserocr.PSM.SINGLE_BLOCK)
 
         api.SetImage(pil_image)
 
-        total = 0
-        found = 0
+        for i, line in enumerate(merged_text_boxes):
 
-        for i, line in enumerate(image_merged_boxes):
             filtered_line = []
             for box in line:
                 is_text, text = filter_boxes(box, api)
-                total += 1
 
                 if is_text:
-                    found += 1
                     filtered_line.append([box, text.strip()])
-                    print(text.strip())
+                    # print(text.strip())
 
-            image_merged_boxes[i] = filtered_line
+            merged_text_boxes[i] = filtered_line
 
-    for val in image_merged_boxes:
-        col = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
-        for box in val:
-            box = box[0]
-            cv2.rectangle(image, (box[0], box[1]), (box[2] + box[0], box[1] + box[3]), col, 2)
+    # for val in merged_text_boxes:
+    #     col = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+    #     for box in val:
+    #         box = box[0]
+    #         cv2.rectangle(image, (box[0], box[1]), (box[2] + box[0], box[1] + box[3]), col, 2)
 
-    cv2.imwrite("Output/image{}.jpg".format(count), image)
-
-
-def get_merged_hierarchical_bbox(image_path):
-    lev = Hierarchy.get_hierarchy_levels(image_path)
-    image = cv2.imread(image_path)
-
-    for key in lev.keys():
-        for val in lev[key]:
-            val[2] -= val[0] - 5
-            val[3] -= val[1]
-            val[0] -= 5
-
-    new_levels = []
-
-    for val in lev.values():
-        new_val = list(filter(lambda x: x[3] + x[1] < image.shape[0] and x[2] + x[0] < image.shape[1], sorted(val)))
-
-        if len(new_val) != 0:
-            new_levels.append(new_val)
-
-    print(new_levels)
-
-    new_levels = sorted(new_levels, key=lambda x: x[0][1])
-
-    merged_levels = []
-
-    for val in new_levels:
-        new_val = []
-        merged_bbox = val[0]
-        for i in range(1, len(val)):
-            if val[i][0] < val[i - 1][0] + val[i - 1][2]:
-                merged_bbox[1] = min(merged_bbox[1], val[i - 1][1], val[i][1])
-                merged_bbox[2] = max(merged_bbox[2], val[i - 1][0] + val[i - 1][2] - merged_bbox[0],
-                                     val[i][0] + val[i][2] - merged_bbox[0])
-                merged_bbox[3] = max(merged_bbox[3], val[i - 1][1] + val[i - 1][3] - merged_bbox[1],
-                                     val[i][1] + val[i][3] - merged_bbox[1])
-
-            else:
-                new_val.append(merged_bbox)
-                merged_bbox = val[i]
-
-        if new_val[-1:] != merged_bbox:
-            new_val.append(merged_bbox)
-
-        merged_levels.append(new_val)
-
-    for lev in merged_levels:
-        col = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
-        for box in lev:
-            cv2.rectangle(image, (box[0], box[1]), (box[0] + box[2], box[1] + box[3]), col, 2)
-
-    Hierarchy.debug_image(imutils.resize(image, width=800))
-    cv2.destroyAllWindows()
+    # cv2.imwrite("Output/image{}.jpg".format(count), image)
 
 
 if __name__ == "__main__":
@@ -344,7 +196,5 @@ if __name__ == "__main__":
 
     for file in os.listdir(image_dir):
         if file.endswith(".jpg"):
-            # if count == 20:
-            test_bbox(image_dir + file)
-            # tess_process(cv2.imread(image_dir + file))
+            get_image_text(image_dir + file)
             count += 1

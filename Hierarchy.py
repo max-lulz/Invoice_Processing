@@ -15,7 +15,7 @@ def get_hierarchy_levels(image_path):
     original_image = cv2.imread(image_path)
     filtered_image = preprocess(image_path)
 
-    contour_hierarchy, bounding_boxes = get_bounding_boxes(filtered_image)
+    contour_hierarchy, bounding_boxes = get_contour_bounding_boxes(filtered_image)
 
     hier_image = original_image.copy()
     vis = {}
@@ -83,25 +83,30 @@ def load_image(pdf_path, output_path=""):
         i += 1
 
 
-def preprocess(image_path):
-    image = cv2.imread(image_path)
+def mask_lines(image, line_length):
+
     image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-    hor_kernel = np.zeros((31, 31), dtype=np.uint8)  # square kernel with middle row set to 1
-    hor_kernel[15, :] = 1  # can be changed to a single row kernel
+    horizontal_kernel = np.zeros((1, line_length), dtype=np.uint8)  # square kernel with middle row set to 1
+    horizontal_kernel[:, :] = 1  # can be changed to a single row kernel
 
-    ver_kernel = np.zeros((31, 31), dtype=np.uint8)
-    ver_kernel[:, 15] = 1
+    vertical_kernel = np.zeros((line_length, 1), dtype=np.uint8)
+    vertical_kernel[:, :] = 1
 
-    hor_mask = cv2.morphologyEx(~image, cv2.MORPH_OPEN, hor_kernel, iterations=1)  # make masks that contain
-    ver_mask = cv2.morphologyEx(~image, cv2.MORPH_OPEN, ver_kernel, iterations=1)  # horizontal and vertical lines
+    horizontal_mask = cv2.morphologyEx(~image, cv2.MORPH_OPEN, horizontal_kernel, iterations=1)  # make masks that contain
+    vertical_mask = cv2.morphologyEx(~image, cv2.MORPH_OPEN, vertical_kernel, iterations=1)  # horizontal and vertical lines
 
-    _, hor_mask = cv2.threshold(hor_mask, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
-    _, ver_mask = cv2.threshold(ver_mask, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+    _, horizontal_mask = cv2.threshold(horizontal_mask, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+    _, vertical_mask = cv2.threshold(vertical_mask, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
     _, image = cv2.threshold(image, 150, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
 
-    image += hor_mask  # removes horizontal and vertical lines
-    image += ver_mask  # improves text blob detection
+    image += horizontal_mask  # removes horizontal and vertical lines
+    image += vertical_mask  # improves text blob detection
+
+    return image
+
+
+def dilate_text(image):
 
     close_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, ksize=(5, 5))
     image = cv2.morphologyEx(~image, cv2.MORPH_CLOSE, close_kernel, iterations=2)
@@ -112,15 +117,28 @@ def preprocess(image_path):
     return image
 
 
-def get_bounding_boxes(image, vertices=True):
+def preprocess(image, line_length=31):
+
+    image = mask_lines(image, line_length)
+    image = dilate_text(image)
+
+    return image
+
+
+def get_contour_bounding_boxes(image, get_vertices=True):
+
+    image = image.copy()
+
+    image = preprocess(image)
+
     contours, hierarchy = cv2.findContours(image, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
     bounding_boxes = []
 
     for contour in contours:
         x, y, w, h = cv2.boundingRect(contour)
 
-        x2 = x + w if vertices else w
-        y2 = y + h if vertices else h
+        x2 = x + w if get_vertices else w
+        y2 = y + h if get_vertices else h
 
         bounding_boxes.append([x, y, x2, y2])
 
