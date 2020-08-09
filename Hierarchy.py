@@ -11,6 +11,15 @@ def debug_image(img, name="Debug"):
     cv2.waitKey(0)
 
 
+def load_image(pdf_path, output_path=""):
+    pages = pdf2image.convert_from_path(pdf_path)
+
+    i = 0
+    for page in pages:
+        page.save(output_path + "{}{}.jpg".format(pdf_path.split("/")[-1], i), "JPEG")
+        i += 1
+
+
 def get_hierarchy_levels(image_path):
     original_image = cv2.imread(image_path)
     filtered_image = preprocess(image_path)
@@ -72,15 +81,6 @@ def get_hierarchy_levels(image_path):
     # debug_image(hier_image)
     # print(levels)
     return levels
-
-
-def load_image(pdf_path, output_path=""):
-    pages = pdf2image.convert_from_path(pdf_path)
-
-    i = 0
-    for page in pages:
-        page.save(output_path + "{}{}.jpg".format(pdf_path.split("/")[-1], i), "JPEG")
-        i += 1
 
 
 def mask_lines(image, line_length):
