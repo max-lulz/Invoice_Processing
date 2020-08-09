@@ -1,15 +1,15 @@
-import os
+import concurrent.futures
+import glob
+import random
 import time
+import re
 import cv2
-from PIL import Image
-import pdf2image
 import numpy as np
+import pdf2image
+from PIL import Image
+
 import Hierarchy
 import tesserocr
-import random
-import glob
-import concurrent.futures
-import os
 
 
 def func_time(func):
@@ -23,8 +23,13 @@ def func_time(func):
     return timer
 
 
-def is_level(box1, box2):
-    return True if ((box2[1] - 2 <= centre(box1)[1] <= box2[3] + box2[1] + 2) or (
+def is_column_elem(box1, box2):
+    return True if ((box2[0] <= centre(box1)[0] <= box2[0] + box2[2]) or (
+                box1[0] <= centre(box2)[0] <= box1[0] + box1[2])) else False
+
+
+def is_row_elem(box1, box2):
+    return True if ((box2[1] - 2 <= centre(box1)[1] <= box2[1] + box2[3] + 2) or (
             box1[1] - 2 <= centre(box2)[1] <= box1[3] + box1[1] + 2)) else False
 
 
@@ -65,7 +70,7 @@ def get_line(boxes):
 
         for j in range(i + 1, len(boxes)):
             if is_done[j] == -1:
-                if is_level(boxes[i], boxes[j]):
+                if is_row_elem(boxes[i], boxes[j]):
                     is_done[j] = is_done[i]
                     line_dict[curr_num].append(boxes[j])
 
@@ -94,8 +99,8 @@ def get_merged_boundingboxes(boxes):
                 is_merged[i] = True
 
                 for j in range(i + 1, len(line)):
-                    if line[j][0] < merged_boundingbox[0] + merged_boundingbox[2] and is_level(merged_boundingbox,
-                                                                                               line[j]) and not \
+                    if line[j][0] < merged_boundingbox[0] + merged_boundingbox[2] and is_row_elem(merged_boundingbox,
+                                                                                                  line[j]) and not \
                             is_merged[j]:
                         is_merged[j] = True
                         merged_boundingbox = merge_box(merged_boundingbox, line[j])
@@ -124,22 +129,46 @@ class ImageTextRecog:
     def __init__(self, image, pdf_name):
 
         self.original_image = image
-        self.pdf_name = pdf_name.split(".")[0]
+        # self.pdf_name = pdf_name.split(".")[0]
 
     @staticmethod
     def split_text_box(bounding_box, text):
+        """
+        Splits a multi-line bounding box into single lines, and separates fields from details. Also
+
+        :param bounding_box:
+        :param text:
+        :return: 1-D list with each element of form: [xywh_bounds, text]
+        """
 
         lines = list(filter(lambda x: x != "" and not x.isspace(), text.split("\n")))
         num_lines = len(lines)
         print(lines, text)
 
-        line_height = bounding_box[3] // num_lines
+        line_height = round(bounding_box[3] / num_lines)
 
         line_sep_boxes = [
-            [[bounding_box[0], bounding_box[1] + (i * line_height), bounding_box[2], line_height], text_line] for
-            i, text_line in enumerate(lines)]
+            [[bounding_box[0], bounding_box[1] + (i * line_height), bounding_box[2], line_height],
+             re.sub(r"[^a-zA-Z\d.():]", "", text_line)] for
+            i, text_line in enumerate(lines) if re.sub(r"[^a-zA-Z\d.():]", "", text_line) != ""]
 
-        return line_sep_boxes
+        split_fields = []
+
+        for box in line_sep_boxes:
+            bounding_box = box[0]
+            text_line = box[1]
+            char_width = round(box[0][2] / len(text_line))
+
+            fields = text_line.split(":")
+
+            prev_len = 0
+            for text in fields:
+                new_box = [[bounding_box[0] + prev_len, bounding_box[1], char_width * len(text), bounding_box[3]], text]
+                prev_len += char_width * len(text)
+
+                split_fields.append(new_box)
+
+        return sorted(split_fields, key=lambda x: x[0][0])
 
     def detect_sparse_words(self):
 
@@ -217,22 +246,22 @@ class ImageTextRecog:
 
                 merged_text_boxes[i] = filtered_line
 
-        for val in merged_text_boxes:
-            col = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
-            for box in val:
-                box = box[0]
-                cv2.rectangle(image, (box[0], box[1]), (box[2] + box[0], box[1] + box[3]), col, 2)
-
-        out_dir = "Output/{}".format(self.pdf_name)
-        cv2.imwrite(out_dir + "/1.jpg", image)
+        # for val in merged_text_boxes:
+        #     col = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+        #     for box in val:
+        #         box = box[0]
+        #         cv2.rectangle(image, (box[0], box[1]), (box[2] + box[0], box[1] + box[3]), col, 2)
+        #
+        # out_dir = "Output/{}".format(self.pdf_name)
+        # cv2.imwrite(out_dir + "/1.jpg", image)
 
         return merged_text_boxes
 
 
 def load_image(pdf_path):
     pages = pdf2image.convert_from_path(pdf_path)
-    out_dir = "Output/{}".format(pdf_path.split("/")[1].split(".")[0])
-    os.mkdir(out_dir)
+    # out_dir = "Output/{}".format(pdf_path.split("/")[1].split(".")[0])
+    # os.mkdir(out_dir)
 
     for i, page in enumerate(pages):
         image = cv2.cvtColor(np.array(page), cv2.COLOR_RGB2BGR)
