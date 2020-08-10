@@ -21,3 +21,4 @@ pip install torch_nightly -f https://download.pytorch.org/whl/nightly/cu92/torch
 python FieldClassifier.py
 ```
 
+Replace the path in the main method with the path to the document PDF.
