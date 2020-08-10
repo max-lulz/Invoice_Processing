@@ -1,6 +1,6 @@
 # Invoice_Processing
 
-- Only tested on linux
+- An invoicing tool that uses image processing to extract text bounding boxes, text contained and classification of text into field or detail.
 
 ## Installation :
 
@@ -14,4 +14,10 @@ pip install torch_nightly -f https://download.pytorch.org/whl/nightly/cu92/torch
 
 - You will need Tesseract installed on your system
   - Sudo apt install tesseract-ocr
-    
+  
+# Running :
+ 
+``` 
+python FieldClassifier.py
+```
+
